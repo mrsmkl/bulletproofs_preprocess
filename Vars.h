@@ -2,6 +2,7 @@
 #define VARS_H
 
 #include <map>
+#include <vector>
 #include <gmpxx.h>
 
 class Linear;

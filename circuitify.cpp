@@ -9,12 +9,15 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/tokenizer.hpp>
 #include <fstream>
+#include <chrono>
 #include <stdio.h>
 #include <assert.h>
 #include "utils.h"
 #include "Vars.h"
 #include "Linear.h"
 #include "parsing.h"
+#include <boost/thread.hpp>
+
 using namespace std;
 
 const string SECRET_FILENAME = "/CircuitOutput/filename.assn";
@@ -25,6 +28,27 @@ struct eq_val {
 	unsigned int eq_num;
 	mpz_class val;
 };
+
+void perform_loop(int a, int b, vector<int> *temp_eqs, vector<Linear> *eqs, int idx, int leq, Linear leq_lin, map<int, vector<int>> *index) {
+	cout << "A: " << a << " B: " << b << endl;
+	for (int j = a; j < b; j++)
+	{
+		int i = (*temp_eqs)[j];
+		if (i != leq)
+		{
+			if (!(*eqs)[i].has_var('T', idx))
+			{
+				// cout << "Here ???" << endl;
+				continue;
+			}
+			(*eqs)[i].assign_temp_vars(leq_lin, *index, i);
+			Linear tmp = leq_lin;
+			tmp.mul((*eqs)[i].get_var('T', idx));
+			(*eqs)[i].sub(tmp);
+		}
+	}
+	cout << "finished" << endl;
+}
 
 /* Given int idx, eliminates the variable of the form T<idx> from eqs. Marks for future removal by adding to to_eliminate. */
 void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& index, bool eliminate = false) {
@@ -39,7 +63,6 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 	Linear leq_lin;
 	vector<int> vec;
 
-	cout << "pivoting idx: " << idx << endl;
 
 	vector<int>& temp_eqs = index[idx];
 	for (int i = 0; i < temp_eqs.size(); i++) {
@@ -61,10 +84,20 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 		mpz_class v = eqs[leq].get_var('T', idx);
 		mpz_class inv = modinv(v, mod);
 		leq_lin.mul(inv);
+
+		boost::thread_group group;
+
+		cout << "num of temp_eqs: " << temp_eqs.size() << endl;
+
 		// TODO: Parallelize this loop
+		
+	/*
+
+
 		for (auto i: temp_eqs) {
 			if (i != leq) {
 				if (!eqs[i].has_var('T', idx)) {
+					cout << "here" << endl;
 					continue;
 				}
 				eqs[i].assign_temp_vars(leq_lin, index, i);
@@ -72,7 +105,15 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 				tmp.mul(eqs[i].get_var('T', idx));
 				eqs[i].sub(tmp);
 			}
+		} */
+		int num = 8;
+		int g_sz = temp_eqs.size()/num;
+		for (int j = 0; j < num-1; j++) {
+			group.create_thread(boost::bind(&perform_loop, j*g_sz, (j+1)*g_sz, &temp_eqs, &eqs, idx, leq, leq_lin, &index));
 		}
+		group.create_thread(boost::bind(&perform_loop, (num-1)*g_sz, temp_eqs.size(), &temp_eqs, &eqs, idx, leq, leq_lin, &index));
+		group.join_all();
+		// perform_loop(0, temp_eqs.size(), temp_eqs, eqs, idx, leq, leq_lin, index);
 	}
 	if (eliminate and cc > 0) {
 		eqs[leq].eliminated = true;
@@ -181,8 +222,7 @@ void print_andytoshi_format(vector<Linear>& eqs, struct counts& cnts) {
 void eliminate_temps(vector<Linear>& eqs, struct counts& cnts) {
 	map<int, vector<int>> index = index_temp_vars(eqs);
 	for (int i = 0; i < cnts.temp_count; i++) {
-		if (i % 250 == 0)
-			cout << "temp_eliminated: " << i << "/" << cnts.temp_count << endl;
+		cout << "temp_eliminated: " << i << "/" << cnts.temp_count << endl;
 		pivot_variable_temp(eqs, i, index, true);
 	}
 	delete_eliminated_eqs(eqs);
@@ -388,14 +428,14 @@ int main() {
 	string input_line;
 	auto start = chrono::high_resolution_clock::now();
 	while (getline(cin, input_line)) {
-		cout << "input line: " << input_line << endl;
+		// cout << "input line: " << input_line << endl;
 		parse_statement(eqs, input_line, cnts, mul_data);
 	}
 	auto finish = chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed = finish - start;
 	cout << endl << "Time to parse input: " << elapsed.count() << endl;
 
-	print_andytoshi_format(eqs, cnts);
+	// print_andytoshi_format(eqs, cnts);
 	
 	printf("%d multiplications, %d temporaries, %lu constraints, %d cost\n", cnts.mul_count, cnts.temp_count, eqs.size(), eqs_cost(eqs));
 
@@ -405,7 +445,7 @@ int main() {
 	elapsed = finish - start;
 	cout << "Time to eliminate vars: " << elapsed.count() << endl;
 
-	print_andytoshi_format(eqs, cnts);
+	// print_andytoshi_format(eqs, cnts);
 
 /*	start = chrono::high_resolution_clock::now();
 	reduce_eqs(mul_count);
