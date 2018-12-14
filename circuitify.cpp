@@ -17,6 +17,7 @@
 #include "Linear.h"
 #include "parsing.h"
 #include <boost/thread.hpp>
+#include <chrono>
 
 using namespace std;
 
@@ -29,25 +30,42 @@ struct eq_val {
 	mpz_class val;
 };
 
-void perform_loop(int a, int b, vector<int> *temp_eqs, vector<Linear> *eqs, int idx, int leq, Linear leq_lin, map<int, vector<int>> *index) {
-	cout << "A: " << a << " B: " << b << endl;
-	for (int j = a; j < b; j++)
+void perform_loop(vector<int> *temp_eqs, vector<Linear> *eqs, int idx, int leq, Linear leq_lin_arg, map<int, vector<int>> *index) {
+	auto start2 = std::chrono::high_resolution_clock::now();
+	Linear leq_lin = leq_lin_arg;
+	long long longest = 0;
+	int nv = 0;
+	for (auto i : (*temp_eqs))
 	{
-		int i = (*temp_eqs)[j];
 		if (i != leq)
 		{
 			if (!(*eqs)[i].has_var('T', idx))
 			{
-				// cout << "Here ???" << endl;
 				continue;
 			}
+			nv += (*eqs)[i].num_vars();
+
+			auto start1 = std::chrono::high_resolution_clock::now();
 			(*eqs)[i].assign_temp_vars(leq_lin, *index, i);
 			Linear tmp = leq_lin;
 			tmp.mul((*eqs)[i].get_var('T', idx));
 			(*eqs)[i].sub(tmp);
+			auto elapsed1 = std::chrono::high_resolution_clock::now() - start1;
+
+			long long ms1 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed1).count();
+			if (ms1 > longest) {
+				longest = ms1;
+			}
 		}
 	}
-	cout << "finished" << endl;
+	auto elapsed2 = std::chrono::high_resolution_clock::now() - start2;
+
+	long long ms2 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed2).count();
+
+//	cout << "A: " << a << " B: " << b << " Elapsed: " << ms2 << " Longest: " << longest << " Vars: " << nv << endl;
+//	cout << " Elapsed: " << ms2 << " Longest: " << longest << " Vars: " << nv << endl;
+	
+	// cout << "finished" << endl;
 }
 
 /* Given int idx, eliminates the variable of the form T<idx> from eqs. Marks for future removal by adding to to_eliminate. */
@@ -63,8 +81,20 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 	Linear leq_lin;
 	vector<int> vec;
 
+	map<int,bool> uniq;
 
-	vector<int>& temp_eqs = index[idx];
+	auto start2 = std::chrono::high_resolution_clock::now();
+	int dcount = 0;
+	vector<int> temp_eqs;
+	for (auto a : index[idx]) {
+		if (uniq.count(a) == 0) {
+	        uniq[a] = true;
+			temp_eqs.push_back(a);
+		}
+		else dcount++;
+	}
+//	cout << "Found duplicates " << dcount << endl;
+
 	for (int i = 0; i < temp_eqs.size(); i++) {
 		int lin = temp_eqs[i];
 		cc += 1;
@@ -85,9 +115,74 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 		mpz_class inv = modinv(v, mod);
 		leq_lin.mul(inv);
 
-		boost::thread_group group;
+		int cost = 0;
+
+		for (auto i : temp_eqs)
+		{
+				if (i != leq && eqs[i].has_var('T', idx)) cost += eqs[i].num_vars();
+		}
+
+		int num = 12;
+		int g_sz = cost / num;
 
 		cout << "num of temp_eqs: " << temp_eqs.size() << endl;
+
+		vector<vector<int>> buckets(num);
+		int jdx = 0;
+		for (int j = 0; j < num-1; j++)
+		{
+
+			int acc = 0;
+
+			while (acc < g_sz && jdx < temp_eqs.size())
+			{
+				int i = temp_eqs[jdx]; 
+
+				if (i != leq && eqs[i].has_var('T', idx)) {
+					acc += eqs[i].num_vars();
+					buckets[j].push_back(i);
+				}
+				jdx++;
+			}
+//			cout << "Bucket " << j << " at " << jdx << " vars " << acc << endl;
+
+		}
+		
+		while (jdx < temp_eqs.size()) {
+			buckets[num-1].push_back(temp_eqs[jdx]);
+			jdx++;
+		}
+//		cout << "Bucket " << (num-1) << " at " << jdx << endl;
+		
+		
+		auto elapsed2 = std::chrono::high_resolution_clock::now() - start2;
+
+		long long ms2 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed2).count();
+		/*
+
+		int dcount = 0;
+		for (auto i : temp_eqs)
+		{
+			int dups = 0;
+			for (auto j : temp_eqs)
+			{
+				if (i == j) dups++;
+			}
+			if (dups > 1) dcount++;
+		}
+		cout << "Found duplicates " << dcount << endl;
+
+		for (auto i: temp_eqs) {
+			if (i != leq) {
+				if (!eqs[i].has_var('T', idx)) {
+					continue;
+				}
+				eqs[i].assign_temp_vars(leq_lin, index, i);
+			}
+		}
+		*/
+
+		boost::thread_group group;
 
 		// TODO: Parallelize this loop
 		
@@ -106,6 +201,37 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 				eqs[i].sub(tmp);
 			}
 		} */
+
+	auto start1 = std::chrono::high_resolution_clock::now();
+
+		vector<map<int, vector<int>>> indexes(num);
+		for (int j = 0; j < num; j++) {
+			group.create_thread(boost::bind(&perform_loop, &buckets[j], &eqs, idx, leq, leq_lin, &indexes[j]));
+		}
+		group.join_all();
+
+    auto elapsed1 = std::chrono::high_resolution_clock::now() - start1;
+
+     long long ms1 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed1).count();
+		
+		int count = 0;
+		for (auto mp : indexes) {
+			for (auto const& x : mp) {
+				count++;
+				if (index.count(x.first) == 0)
+					index[x.first] = x.second;
+				else {
+					for (auto elem : x.second) {
+						index[x.first].push_back(elem);
+						count++;
+					}
+				}
+			}
+		}
+		
+		cout << "Threads " << ms1 << " Merge " << ms2 << endl;
+
+/*
 		int num = 8;
 		int g_sz = temp_eqs.size()/num;
 		for (int j = 0; j < num-1; j++) {
@@ -113,7 +239,12 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 		}
 		group.create_thread(boost::bind(&perform_loop, (num-1)*g_sz, temp_eqs.size(), &temp_eqs, &eqs, idx, leq, leq_lin, &index));
 		group.join_all();
-		// perform_loop(0, temp_eqs.size(), temp_eqs, eqs, idx, leq, leq_lin, index);
+*/
+//		auto &x = buckets[num-1];
+		
+		// perform_loop(&buckets[num-1], &eqs, idx, leq, leq_lin, &index);
+		// perform_loop(&temp_eqs, &eqs, idx, leq, leq_lin, &index);
+		// perform_loop(&x, &eqs, idx, leq, leq_lin, &index);
 	}
 	if (eliminate and cc > 0) {
 		eqs[leq].eliminated = true;
@@ -121,49 +252,6 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 	index.erase(idx);
 }
 
-/*void pivot_variable(vector<Linear>& eqs_vec, int vnam, bool eliminate = false) {
-	char type = var_type(vnam);
-	int idx = var_idx(vnam);
-	int c = 0;
-	int cc = 0;
-	int low = -1;
-	Linear leq;
-	vector<int> vec;
-//	cout << "pivot_varing, type: " << type << " idx: " << idx << endl;
-	for (int i = 0; i < eqs_vec.size(); i++) {
-		if (eqs_vec[i].has_var(type, idx)) {
-	//		cout << "found it!" << endl;
-			vec.push_back(i);
-			cc += 1;
-			if (low == -1 || c > eqs_vec[i].num_vars()) {
-				low = i;
-				c = eqs_vec[i].num_vars();
-				Linear tmp = eqs_vec[i];
-				mpz_class v = eqs_vec[i].get_var(type, idx);
-				mpz_class inv = modinv(v, mod);
-				tmp.mul(inv);
-				leq = eqs_vec[i];
-			}
-		}
-	}
-//	cout << "cc: " << cc << endl;
-	if (cc > 1) {
-		for (auto i: vec) {
-			if (i != low) {
-				Linear tmp = leq;
-				tmp.mul(eqs_vec[i].get_var(type, idx));
-				int before = eqs_vec[i].equation_cost();
-				eqs_vec[i].sub(tmp);
-				int after = eqs_vec[i].equation_cost();
-				int diff = after - before;
-			//	cout << diff << endl;
-			}
-		}
-	}
-	if (eliminate and cc > 0) {
-		eqs_vec.erase(eqs_vec.begin()+low);
-	}
-}*/
 
 map<int, vector<int>> index_temp_vars(vector<Linear>& eqs) {
 	map<int, vector<int>> temp_index;

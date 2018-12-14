@@ -6,6 +6,8 @@
 #include <gmpxx.h>
 #include "utils.h"
 #include "Vars.h"
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/thread.hpp>
 
 using namespace std;
 
@@ -13,10 +15,14 @@ using namespace std;
 #define COST_SCALAR_NEG 2
 #define COST_SCALAR_COPY 1
 
+boost::mutex mutex[100000];
+
 // deletes variables with value 0
 void Vars::reduce() {
+//	boost::unique_lock<boost::mutex> scoped_lock(mutex[1]);
 	for(map<int, mpz_class>::iterator it = var_map.begin(); it != var_map.end();) {
-		if((it->second % mod) == 0) {
+//		if((it->second % mod) == 0) {
+		if(it->second == 0) {
 			it = var_map.erase(it);
 		} else {
 			it++;
@@ -46,18 +52,17 @@ void Vars::index_temp_vars(map<int, vector<int>>& index, int i, Linear& eq, bool
 	for (auto const&x : var_map) {
 		if (var_type(x.first) == 'T') {
 			int idx = var_idx(x.first);
-		//	cout << "considering T" << idx << " for indexing" << endl;
 			if (check_dups && eq.has_var('T', idx))
 				continue;
-		/*	if (idx == 7) {
-				cout << "indexing: T" << idx << " at: " << i << endl;
-				eq.to_str();
-				cout << endl;
-			}*/
-			if (index.count(idx) == 0)
-				index[idx] = {i};
-			else 
-				index[idx].push_back(i);
+			{
+				// if (idx > 100000) cout << "Too many vars" << endl;
+				// boost::unique_lock<boost::mutex> scoped_lock(mutex[idx]);
+				// boost::unique_lock<boost::mutex> scoped_lock(mutex[3]);
+				if (index.count(idx) == 0)
+					index[idx] = {i};
+				else
+					index[idx].push_back(i);
+			}
 		}
 	}
 }
@@ -67,6 +72,7 @@ int Vars::num_vars() {
 }
 
 void Vars::add(Vars& other) {
+	// boost::unique_lock<boost::mutex> scoped_lock(mutex[0]);
 	for (auto const&x : other.var_map) {
 		if (var_map.find(x.first) == var_map.end()) {
 			var_map[x.first] = x.second % mod;
@@ -78,6 +84,7 @@ void Vars::add(Vars& other) {
 }
 
 void Vars::sub(Vars& other) {
+	// boost::unique_lock<boost::mutex> scoped_lock(mutex[0]);
 	for (auto const&x : other.var_map) {
 		if (var_map.find(x.first) == var_map.end()) {
 			var_map[x.first] = (mod - x.second) % mod;
@@ -89,6 +96,7 @@ void Vars::sub(Vars& other) {
 }
 
 void Vars::mul(mpz_class v) {
+	// boost::unique_lock<boost::mutex> scoped_lock(mutex[0]);
 	for (auto const&x : var_map) {
 		var_map[x.first] = (var_map[x.first] * v) % mod;
 	}

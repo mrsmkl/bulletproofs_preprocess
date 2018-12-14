@@ -84,3 +84,4 @@
 	map<int, mpz_class>::iterator Linear::vars_end() {
 		return vars.vars_end();
 	}
+	

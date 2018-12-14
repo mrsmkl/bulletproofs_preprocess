@@ -52,4 +52,7 @@ public:
 	std::map<int, mpz_class>::iterator vars_end();
 };
 
+
+
+
 #endif
