@@ -31,7 +31,7 @@ struct eq_val {
 };
 
 void perform_loop(vector<int> *temp_eqs, vector<Linear> *eqs, int idx, int leq, Linear leq_lin_arg, map<int, vector<int>> *index) {
-	auto start2 = std::chrono::high_resolution_clock::now();
+	// auto start2 = std::chrono::high_resolution_clock::now();
 	Linear leq_lin = leq_lin_arg;
 	long long longest = 0;
 	int nv = 0;
@@ -45,22 +45,22 @@ void perform_loop(vector<int> *temp_eqs, vector<Linear> *eqs, int idx, int leq, 
 			}
 			nv += (*eqs)[i].num_vars();
 
-			auto start1 = std::chrono::high_resolution_clock::now();
+			// auto start1 = std::chrono::high_resolution_clock::now();
 			(*eqs)[i].assign_temp_vars(leq_lin, *index, i);
 			Linear tmp = leq_lin;
 			tmp.mul((*eqs)[i].get_var('T', idx));
 			(*eqs)[i].sub(tmp);
-			auto elapsed1 = std::chrono::high_resolution_clock::now() - start1;
+			// auto elapsed1 = std::chrono::high_resolution_clock::now() - start1;
 
-			long long ms1 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed1).count();
-			if (ms1 > longest) {
+			// long long ms1 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed1).count();
+			/*if (ms1 > longest) {
 				longest = ms1;
-			}
+			}*/
 		}
 	}
-	auto elapsed2 = std::chrono::high_resolution_clock::now() - start2;
+	// auto elapsed2 = std::chrono::high_resolution_clock::now() - start2;
 
-	long long ms2 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed2).count();
+	// long long ms2 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed2).count();
 
 //	cout << "A: " << a << " B: " << b << " Elapsed: " << ms2 << " Longest: " << longest << " Vars: " << nv << endl;
 //	cout << " Elapsed: " << ms2 << " Longest: " << longest << " Vars: " << nv << endl;
@@ -83,7 +83,6 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 
 	map<int,bool> uniq;
 
-	auto start2 = std::chrono::high_resolution_clock::now();
 	int dcount = 0;
 	vector<int> temp_eqs;
 	for (auto a : index[idx]) {
@@ -109,7 +108,7 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 		}
 	}
 
-	if (cc > 1) {
+	last: if (cc > 1) {
 		leq_lin = eqs[leq];
 		mpz_class v = eqs[leq].get_var('T', idx);
 		mpz_class inv = modinv(v, mod);
@@ -121,6 +120,11 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 		{
 				if (i != leq && eqs[i].has_var('T', idx)) cost += eqs[i].num_vars();
 		}
+
+		if (cost < 10000) {
+		    perform_loop(&temp_eqs, &eqs, idx, leq, leq_lin, &index);
+		}
+		else {
 
 		int num = 12;
 		int g_sz = cost / num;
@@ -155,9 +159,6 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 //		cout << "Bucket " << (num-1) << " at " << jdx << endl;
 		
 		
-		auto elapsed2 = std::chrono::high_resolution_clock::now() - start2;
-
-		long long ms2 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed2).count();
 		/*
 
 		int dcount = 0;
@@ -214,6 +215,7 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 
      long long ms1 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed1).count();
 		
+	auto start2 = std::chrono::high_resolution_clock::now();
 		int count = 0;
 		for (auto mp : indexes) {
 			for (auto const& x : mp) {
@@ -229,6 +231,9 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 			}
 		}
 		
+		auto elapsed2 = std::chrono::high_resolution_clock::now() - start2;
+
+		long long ms2 = std::chrono::duration_cast<std::chrono::microseconds>(elapsed2).count();
 		cout << "Threads " << ms1 << " Merge " << ms2 << endl;
 
 /*
@@ -243,8 +248,8 @@ void pivot_variable_temp(vector<Linear>& eqs, int idx, map<int, vector<int>>& in
 //		auto &x = buckets[num-1];
 		
 		// perform_loop(&buckets[num-1], &eqs, idx, leq, leq_lin, &index);
-		// perform_loop(&temp_eqs, &eqs, idx, leq, leq_lin, &index);
 		// perform_loop(&x, &eqs, idx, leq, leq_lin, &index);
+		}
 	}
 	if (eliminate and cc > 0) {
 		eqs[leq].eliminated = true;
